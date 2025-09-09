@@ -15,6 +15,77 @@ export default function ClientRunner({ slug }) {
   const [mode, setMode] = useState("detailed");
   const [decision, setDecision] = useState(50);
 
+  // Chat Moderator is bot-oriented; show CTAs instead of input form
+  if (slug === "chat-moderator") {
+    const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+    const webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/telegram` : "";
+
+    return (
+      <div className="space-y-4">
+        <div className="text-sm text-black/70 dark:text-white/70">
+          Connect the Chat Moderator to your Telegram community. It auto-detects
+          scams/spam and suggests moderation actions.
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={tgUsername ? `https://t.me/${tgUsername}` : undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`rounded-lg px-3 py-2 text-sm border ${
+              tgUsername
+                ? "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+                : "opacity-50 cursor-not-allowed border-black/[.12] dark:border-white/[.18]"
+            }`}
+            aria-disabled={!tgUsername}
+          >
+            Open Telegram bot
+            {tgUsername ? "" : " (set NEXT_PUBLIC_TELEGRAM_BOT_USERNAME)"}
+          </a>
+          <a
+            href={
+              tgUsername
+                ? `https://t.me/${tgUsername}?startgroup=true`
+                : undefined
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`rounded-lg px-3 py-2 text-sm border ${
+              tgUsername
+                ? "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+                : "opacity-50 cursor-not-allowed border-black/[.12] dark:border-white/[.18]"
+            }`}
+            aria-disabled={!tgUsername}
+          >
+            Add to a Telegram group
+          </a>
+          {webhookUrl ? (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(webhookUrl)}
+              className="rounded-lg px-3 py-2 text-sm border border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+            >
+              Copy webhook URL
+            </button>
+          ) : null}
+        </div>
+        <div
+          className={`${inter.className} text-xs rounded-lg border border-black/[.08] dark:border-white/[.12] p-3 bg-black/[.02] dark:bg-white/[.04]`}
+        >
+          <div className="font-semibold mb-1">Setup steps</div>
+          <ol className="list-decimal pl-5 space-y-1">
+            <li>Deploy the app and set FIREWORKS_API_KEY on your host.</li>
+            <li>
+              Set Telegram webhook to {webhookUrl || "/api/webhooks/telegram"}.
+            </li>
+            <li>Make the bot admin in your group (optional for actions).</li>
+            <li>Messages are classified: ALLOW / WARN / BLOCK with reasons.</li>
+          </ol>
+        </div>
+      </div>
+    );
+  }
+
   const { mainKeyPoint, bullets, whyItMatters, optionalContext, tldr } =
     useMemo(() => {
       const text = String(output || "");

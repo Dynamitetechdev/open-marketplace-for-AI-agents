@@ -3,6 +3,7 @@ import { agents as seedAgents } from "./data";
 // Simple in-memory store for MVP. In production, replace with a DB.
 const state = {
   agents: [...seedAgents],
+  sessions: new Map(), // key: chatId/platform -> { mode, threshold }
 };
 
 export function listAgents() {
@@ -116,4 +117,18 @@ export function runAgentSync(agent, input) {
     160
   )}"`;
   return { output, cost: 0, provider: "mock" };
+}
+
+export function getSession(key) {
+  if (!state.sessions.has(key)) {
+    state.sessions.set(key, { mode: "detailed", threshold: 70 });
+  }
+  return state.sessions.get(key);
+}
+
+export function setSession(key, updates) {
+  const cur = getSession(key);
+  const next = { ...cur, ...updates };
+  state.sessions.set(key, next);
+  return next;
 }

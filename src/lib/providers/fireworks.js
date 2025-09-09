@@ -8,6 +8,7 @@ export async function callFireworksChat({
   topP = 1,
   maxTokens = 500,
   stream = false,
+  responseFormat,
 } = {}) {
   const apiKey = process.env.FIREWORKS_API_KEY;
   if (!apiKey) throw new Error("FIREWORKS_API_KEY is not set");
@@ -25,6 +26,7 @@ export async function callFireworksChat({
       temperature,
       top_p: topP,
       stream,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
     }),
     cache: "no-store",
   });
@@ -72,21 +74,26 @@ export async function moderateWithFireworks(messageText) {
     {
       role: "system",
       content:
-        "You are a content moderation assistant for online communities. Classify messages as allow/warn/block to protect users from scams, harassment, and sensitive content. Respond with STRICT JSON only.",
+        "You are a content moderation assistant for online communities. Always return STRICT JSON only.",
     },
     {
       role: "user",
-      content: `Classify the following message. Output STRICT JSON with keys: decision (one of: "allow", "warn", "block"), severity (0-100), reasons (string[]), highlights (string[]). Message:\n\n${messageText}`,
+      content: `Classify the message. Output STRICT JSON ONLY with keys: decision (one of: "allow","warn","block"), severity (0-100), reasons (string[]), highlights (string[]). No extra text. Message:\n\n${messageText}`,
     },
   ];
   const { text } = await callFireworksChat({
     messages,
-    temperature: 0.2,
+    temperature: 0.0,
     maxTokens: 300,
+    responseFormat: { type: "json_object" },
   });
   try {
     return JSON.parse(text);
   } catch (_err) {
+    try {
+      const m = String(text || "").match(/\{[\s\S]*\}/);
+      if (m) return JSON.parse(m[0]);
+    } catch {}
     return {
       decision: "allow",
       severity: 10,

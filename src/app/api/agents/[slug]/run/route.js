@@ -36,16 +36,7 @@ export async function POST(request, { params }) {
       }
     }
     if (agent.slug === "chat-moderator") {
-      if (process.env.FIREWORKS_API_KEY) {
-        const result = await moderateWithFireworks(input);
-        return NextResponse.json({
-          status: "done",
-          output: JSON.stringify(result, null, 2),
-          cost: 0,
-          provider: "fireworks",
-        });
-      }
-      // fallback to simple rule-based
+      // Hybrid approach: apply rules first
       const lower = input.toLowerCase();
       const rules = [
         {
@@ -58,29 +49,76 @@ export async function POST(request, { params }) {
           action: "block",
           reason: "Never ask private key",
         },
+        { keyword: "mnemonic", action: "block", reason: "Never ask mnemonic" },
+        {
+          keyword: "wallet passphrase",
+          action: "block",
+          reason: "Never ask passphrase",
+        },
         {
           keyword: "airdrop",
           action: "warn",
           reason: "Potential scam giveaway",
         },
         {
-          keyword: "free",
+          keyword: "free ",
           action: "warn",
           reason: "Too-good-to-be-true offer",
         },
+        { keyword: "giveaway", action: "warn", reason: "Giveaway risk" },
+        { keyword: "dm me", action: "warn", reason: "Unsolicited DM" },
       ];
-      const hits = rules.filter((r) => lower.includes(r.keyword));
-      let decision = "allow";
-      if (hits.some((h) => h.action === "block")) decision = "block";
-      else if (hits.some((h) => h.action === "warn")) decision = "warn";
+      const ruleHits = rules.filter((r) => lower.includes(r.keyword));
+      let ruleDecision = "allow";
+      if (ruleHits.some((h) => h.action === "block")) ruleDecision = "block";
+      else if (ruleHits.some((h) => h.action === "warn")) ruleDecision = "warn";
+
+      // If Fireworks available, request JSON moderation
+      if (process.env.FIREWORKS_API_KEY) {
+        const llm = await moderateWithFireworks(input);
+        // Merge results: strongest action wins; combine reasons/highlights; max severity
+        const decisions = [ruleDecision, llm?.decision || "allow"];
+        const strength = { allow: 0, warn: 1, block: 2 };
+        const mergedDecision =
+          decisions.sort((a, b) => strength[b] - strength[a])[0] || "allow";
+        const severity = Math.max(
+          mergedDecision === "block" ? 90 : mergedDecision === "warn" ? 60 : 10,
+          typeof llm?.severity === "number" ? llm.severity : 0
+        );
+        const reasons = [
+          ...new Set([
+            ...ruleHits.map((h) => h.reason),
+            ...(Array.isArray(llm?.reasons) ? llm.reasons : []),
+          ]),
+        ];
+        const highlights = [
+          ...new Set([
+            ...ruleHits.map((h) => h.keyword),
+            ...(Array.isArray(llm?.highlights) ? llm.highlights : []),
+          ]),
+        ];
+        return NextResponse.json({
+          status: "done",
+          output: JSON.stringify(
+            { decision: mergedDecision, severity, reasons, highlights },
+            null,
+            2
+          ),
+          cost: 0,
+          provider: "hybrid",
+        });
+      }
+
+      // No Fireworks: return rule-based
       return NextResponse.json({
         status: "done",
         output: JSON.stringify(
           {
-            decision,
-            severity: decision === "block" ? 90 : decision === "warn" ? 60 : 10,
-            reasons: hits.map((h) => h.reason),
-            highlights: hits.map((h) => h.keyword),
+            decision: ruleDecision,
+            severity:
+              ruleDecision === "block" ? 90 : ruleDecision === "warn" ? 60 : 10,
+            reasons: ruleHits.map((h) => h.reason),
+            highlights: ruleHits.map((h) => h.keyword),
           },
           null,
           2
