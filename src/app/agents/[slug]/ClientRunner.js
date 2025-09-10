@@ -15,12 +15,70 @@ export default function ClientRunner({ slug }) {
   const [mode, setMode] = useState("detailed");
   const [decision, setDecision] = useState(50);
 
+  // Public env for CTAs
+  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+  const webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/telegram` : "";
+
+  // Always compute parsed sections so hooks are not conditional
+  const { mainKeyPoint, bullets, whyItMatters, optionalContext, tldr } =
+    useMemo(() => {
+      const text = String(output || "");
+      const lines = text.split(/\r?\n/);
+      let mkp = "";
+      const points = [];
+      let reason = "";
+      let context = "";
+      let tldrLine = "";
+
+      let section = "";
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (/^main key point\s*:/i.test(line)) {
+          section = "main";
+          mkp = line.replace(/^main key point\s*:/i, "").trim();
+          continue;
+        }
+        if (/^key points\s*:/i.test(line)) {
+          section = "bullets";
+          continue;
+        }
+        if (/^why it matters\s*:/i.test(line)) {
+          section = "why";
+          reason += line.replace(/^why it matters\s*:/i, "").trim();
+          continue;
+        }
+        if (/^optional context\s*:/i.test(line)) {
+          section = "context";
+          context += line.replace(/^optional context\s*:/i, "").trim();
+          continue;
+        }
+        if (/^tl;dr\s*:/i.test(line)) {
+          section = "tldr";
+          tldrLine = line.replace(/^tl;dr\s*:/i, "").trim();
+          continue;
+        }
+
+        if (section === "bullets" && /^[-•]/.test(line)) {
+          points.push(line.replace(/^[-•]\s*/, "").trim());
+        } else if (section === "why") {
+          reason += (reason ? "\n" : "") + line;
+        } else if (section === "context") {
+          context += (context ? "\n" : "") + line;
+        }
+      }
+      return {
+        mainKeyPoint: mkp,
+        bullets: points,
+        whyItMatters: reason,
+        optionalContext: context,
+        tldr: tldrLine,
+      };
+    }, [output]);
+
   // Chat Moderator is bot-oriented; show CTAs instead of input form
   if (slug === "chat-moderator") {
-    const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
-    const webhookUrl = baseUrl ? `${baseUrl}/api/webhooks/telegram` : "";
-
     return (
       <div className="space-y-4">
         <div className="text-sm text-black/70 dark:text-white/70">
@@ -86,62 +144,6 @@ export default function ClientRunner({ slug }) {
     );
   }
 
-  const { mainKeyPoint, bullets, whyItMatters, optionalContext, tldr } =
-    useMemo(() => {
-      const text = String(output || "");
-      const lines = text.split(/\r?\n/);
-      let mkp = "";
-      const points = [];
-      let reason = "";
-      let context = "";
-      let tldrLine = "";
-
-      let section = "";
-      for (const raw of lines) {
-        const line = raw.trim();
-        if (!line) continue;
-        if (/^main key point\s*:/i.test(line)) {
-          section = "main";
-          mkp = line.replace(/^main key point\s*:/i, "").trim();
-          continue;
-        }
-        if (/^key points\s*:/i.test(line)) {
-          section = "bullets";
-          continue;
-        }
-        if (/^why it matters\s*:/i.test(line)) {
-          section = "why";
-          reason += line.replace(/^why it matters\s*:/i, "").trim();
-          continue;
-        }
-        if (/^optional context\s*:/i.test(line)) {
-          section = "context";
-          context += line.replace(/^optional context\s*:/i, "").trim();
-          continue;
-        }
-        if (/^tl;dr\s*:/i.test(line)) {
-          section = "tldr";
-          tldrLine = line.replace(/^tl;dr\s*:/i, "").trim();
-          continue;
-        }
-
-        if (section === "bullets" && /^[-•]/.test(line)) {
-          points.push(line.replace(/^[-•]\s*/, "").trim());
-        } else if (section === "why") {
-          reason += (reason ? "\n" : "") + line;
-        } else if (section === "context") {
-          context += (context ? "\n" : "") + line;
-        }
-      }
-      return {
-        mainKeyPoint: mkp,
-        bullets: points,
-        whyItMatters: reason,
-        optionalContext: context,
-        tldr: tldrLine,
-      };
-    }, [output]);
-
   async function onSubmit(e) {
     e.preventDefault();
     setLoading(true);
@@ -172,56 +174,125 @@ export default function ClientRunner({ slug }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm text-black/70 dark:text-white/70">Mode</div>
-        <div className="flex items-center gap-2 text-xs">
+      {slug !== "chat-moderator" ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-black/70 dark:text-white/70">Mode</div>
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setMode("concise")}
+                className={`rounded px-2 py-1 border ${
+                  mode === "concise"
+                    ? "bg-black/[.08] dark:bg-white/[.12]"
+                    : "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+                }`}
+              >
+                Concise
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("detailed")}
+                className={`rounded px-2 py-1 border ${
+                  mode === "detailed"
+                    ? "bg-black/[.08] dark:bg-white/[.12]"
+                    : "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+                }`}
+              >
+                Detailed
+              </button>
+            </div>
+          </div>
+          <textarea
+            className="w-full rounded-lg border border-black/[.1] dark:border-white/[.15] p-3 bg-transparent"
+            rows={5}
+            placeholder="Type your prompt or paste a link..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+          />
           <button
-            type="button"
-            onClick={() => setMode("concise")}
-            className={`rounded px-2 py-1 border ${
-              mode === "concise"
-                ? "bg-black/[.08] dark:bg-white/[.12]"
-                : "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
-            }`}
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="w-full rounded-lg bg-foreground text-background py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
           >
-            Concise
+            {loading ? "Running..." : "Run Agent"}
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("detailed")}
-            className={`rounded px-2 py-1 border ${
-              mode === "detailed"
-                ? "bg-black/[.08] dark:bg-white/[.12]"
-                : "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
-            }`}
+        </>
+      ) : (
+        <>
+          <div className="text-sm text-black/70 dark:text-white/70">
+            Connect the Chat Moderator to your Telegram community. It
+            auto-detects scams/spam and suggests moderation actions.
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <a
+              href={tgUsername ? `https://t.me/${tgUsername}` : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`rounded-lg px-3 py-2 text-sm border ${
+                tgUsername
+                  ? "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+                  : "opacity-50 cursor-not-allowed border-black/[.12] dark:border-white/[.18]"
+              }`}
+              aria-disabled={!tgUsername}
+            >
+              Open Telegram bot
+              {tgUsername ? "" : " (set NEXT_PUBLIC_TELEGRAM_BOT_USERNAME)"}
+            </a>
+            <a
+              href={
+                tgUsername
+                  ? `https://t.me/${tgUsername}?startgroup=true`
+                  : undefined
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`rounded-lg px-3 py-2 text-sm border ${
+                tgUsername
+                  ? "border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+                  : "opacity-50 cursor-not-allowed border-black/[.12] dark:border-white/[.18]"
+              }`}
+              aria-disabled={!tgUsername}
+            >
+              Add to a Telegram group
+            </a>
+            {webhookUrl ? (
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(webhookUrl)}
+                className="rounded-lg px-3 py-2 text-sm border border-black/[.12] dark:border-white/[.18] hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+              >
+                Copy webhook URL
+              </button>
+            ) : null}
+          </div>
+          <div
+            className={`${inter.className} text-xs rounded-lg border border-black/[.08] dark:border-white/[.12] p-3 bg-black/[.02] dark:bg-white/[.04]`}
           >
-            Detailed
-          </button>
-        </div>
-      </div>
-      <textarea
-        className="w-full rounded-lg border border-black/[.1] dark:border-white/[.15] p-3 bg-transparent"
-        rows={5}
-        placeholder="Type your prompt or paste a link..."
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-      />
-      <button
-        type="submit"
-        disabled={loading || !input.trim()}
-        className="w-full rounded-lg bg-foreground text-background py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
-      >
-        {loading ? "Running..." : "Run Agent"}
-      </button>
+            <div className="font-semibold mb-1">Setup steps</div>
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>Deploy the app and set FIREWORKS_API_KEY on your host.</li>
+              <li>
+                Set Telegram webhook to {webhookUrl || "/api/webhooks/telegram"}
+                .
+              </li>
+              <li>Make the bot admin in your group (optional for actions).</li>
+              <li>
+                Messages are classified: ALLOW / WARN / BLOCK with reasons.
+              </li>
+            </ol>
+          </div>
+        </>
+      )}
       {error ? (
         <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
       ) : null}
-      {loading ? (
+      {loading && slug !== "chat-moderator" ? (
         <div className="mt-5 space-y-3">
           <div className="h-7 w-2/3 rounded skeleton" />
           <div className="h-24 w-full rounded skeleton" />
         </div>
-      ) : output ? (
+      ) : output && slug !== "chat-moderator" ? (
         <div key={animateKey} className="space-y-4 animate-fadeIn mt-5">
           {mainKeyPoint ? (
             <div className={`${inter.className} font-bold text-3xl`}>
